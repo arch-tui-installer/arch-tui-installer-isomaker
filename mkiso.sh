@@ -1,4 +1,9 @@
 #!/usr/bin/bash
+if [[ ! -f /usr/bin/pacman ]]; then
+	echo "[!] This is not Archlinux"
+	echo "[*] Please run this Script with Archlinux"
+	exit
+fi
 echo "[*] Update/Install archiso"
 sudo pacman --needed --noconfirm -Sy archiso
 echo "[*] Remove Folders: out, work"
