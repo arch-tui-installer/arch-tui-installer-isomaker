@@ -1,0 +1,480 @@
+#!/usr/bin/bash
+# SCRIPT - Main Installation Script
+#          Installation-Modes:
+#          - Basic
+#          - Full
+function rootpw() {
+	p1=$(dialog --cr-wrap --no-cancel --title "$tit1" --passwordbox "$lan1" 10 45 3>&1 1>&2 2>&3 3>&-)
+	c1=$(dialog --cr-wrap --no-cancel --title "$tit1" --passwordbox "$lan2" 10 45 3>&1 1>&2 2>&3 3>&-)
+	if [[ "$p1" == "$c1" ]]; then
+		root_pass="$p1"
+	else
+		dialog --cr-wrap --title "$tit1" --msgbox "$lan5" 0 0
+		rootpw
+	fi
+}
+function userpw() {
+	p2=$(dialog --cr-wrap --no-cancel --title "$tit2" --passwordbox "$lan3" 10 45 3>&1 1>&2 2>&3 3>&-)
+	c2=$(dialog --cr-wrap --no-cancel --title "$tit2" --passwordbox "$lan4" 11 45 3>&1 1>&2 2>&3 3>&-)
+	if [[ "$p2" == "$c2" ]]; then
+		user_pass="$p2"
+	else
+		dialog --cr-wrap --title "$tit2" --msgbox "$lan5" 0 0
+		userpw
+	fi
+}
+function part_manual() {
+	if [[ -d /sys/firmware/efi ]]; then
+		dialog --cr-wrap --title "$tit7a $boot_drive" --msgbox "$lan11" 0 0
+	else
+		dialog --cr-wrap --title "$tit7a $boot_drive" --msgbox "$lan12" 0 0
+	fi
+	cfdisk $boot_drive
+	if [[ $nvme == true ]]; then
+		partition=$(find $boot_drive* -name '*p[0-9]' | tr "\n" " ")
+		partition=$(echo $partition)
+		if [[ "$partition" == "" ]]; then
+			partition=$(find "$boot_drive"* -name '*p[0-9]' | tr "\n" " ")
+			partition=$(echo $partition)
+			if [[ "$partition" == "" ]]; then
+				dialog --cr-wrap --title "$err2" --msgbox "$err4a $boot_drive $err4b" 0 0
+				exit
+			fi
+		fi
+	else
+		partition=$(find $boot_drive* -name '*[0-9]' | tr "\n" " ")
+		partition=$(echo $partition)
+		if [[ "$partition" == "" ]]; then
+		        partition=$(find "$boot_drive"* -name '*[0-9]' | tr "\n" " ")
+		        partition=$(echo $partition)
+		        if [[ "$partition" == "" ]]; then
+		                dialog --cr-wrap --title "$err2" --msgbox "$err4a $boot_drive $err4b" 0 0
+		                exit
+		        fi
+		fi
+	fi
+	lsblk $o6
+	if [[ -d /sys/firmware/efi ]]; then
+		e1=$(dialog --cr-wrap --no-collapse --no-cancel --no-items --title "$tit7b" --menu "$lan13 \n\n$(lsblk $o6 --output NAME,PARTTYPENAME,FSTYPE,SIZE)" 0 0 0 $partition 3>&1 1>&2 2>&3 3>&-)
+		dialog --cr-wrap --title "$tit8 $e1" --yesno "$lan14" 0 0
+		if [[ $? == 0 ]]; then
+			yes | mkfs.vfat $e1
+		fi
+	fi
+	o7=$(dialog --cr-wrap --no-collapse --no-cancel --no-items --title "$tit7b" --menu "$lan17 \n\n$(lsblk $o6 --output NAME,PARTTYPENAME,FSTYPE,SIZE)" 0 0 0 $partition 3>&1 1>&2 2>&3 3>&-)
+	fs=$(dialog --cr-wrap --no-items --no-cancel --title "$tit7b" --menu "$lan33" 0 0 0 btrfs ext4 3>&1 1>&2 2>&3 3>&-)
+	case $fs in
+		btrfs) extp="grub-btrfs" ;;
+	esac
+	dialog --cr-wrap --title "$tit8 $o7" --default-button no --yesno "$lan18" 0 0
+	if [[ $? == 1 ]]; then
+		dialog --cr-wrap --title "$err2" --msgbox "$err5" 0 0
+		exit
+	fi
+	case $fs in
+		ext4) yes | mkfs.ext4 $o7 ;;
+		btrfs) mkfs.btrfs --force $o7 ;;
+	esac
+	dialog --cr-wrap --title "$tit9" --yesno "$lan15" 0 0
+	if [[ $? == 0 ]]; then
+		swap=yes
+		o8=$(dialog --cr-wrap --no-collapse --no-cancel --no-items --title "$tit7b" --menu "$lan16 \n\n$(lsblk $o6 --output NAME,PARTTYPENAME,FSTYPE,SIZE)" 0 0 0 $partition 3>&1 1>&2 2>&3 3>&-)
+		yes | mkswap $o8
+	fi
+}
+function part_automatic() {
+	fs=$(dialog --cr-wrap --no-items --no-cancel --title "$tit7b" --menu "$lan33" 0 0 0 btrfs ext4 3>&1 1>&2 2>&3 3>&-)
+	case $fs in
+        	btrfs) extp="grub-btrfs" ;;
+	esac
+	dialog --cr-wrap --title "$tit8 $boot_drive" --default-button no --yesno "$lan31" 0 0
+	if [[ $? == 1 ]]; then
+		dialog --cr-wrap --title "$err2" --msgbox "$err9" 0 0
+		exit
+	fi
+	if [[ -d /sys/firmware/efi ]]; then
+		echo "o
+y
+n
+
+
+300M
+ef00
+n
+
+
+5G
+8200
+n
+
+
+
+8300
+w
+y" | gdisk $boot_drive
+		swap=yes
+		if [[ $nvme == true ]]; then
+			yes | mkfs.vfat "$boot_drive"p1
+			e1="$boot_drive"p1
+			yes | mkswap "$boot_drive"p2
+			o8="$boot_drive"p2
+			case $fs in
+				ext4) yes | mkfs.ext4 "$boot_drive"p3 ;;
+				btrfs) mkfs.btrfs --force "$boot_drive"p3 ;;
+			esac
+			o7="$boot_drive"p3
+		else
+			yes | mkfs.vfat "$boot_drive"1
+			e1="$boot_drive"1
+			yes | mkswap "$boot_drive"2
+			o8="$boot_drive"2
+			case $fs in
+				ext4) yes | mkfs.ext4 "$boot_drive"3 ;;
+				btrfs) mkfs.btrfs --force "$boot_drive"3 ;;
+			esac
+			o7="$boot_drive"3
+		fi
+	else
+		echo "o
+n
+p
+
+
++5G
+t
+82
+n
+p
+
+
+
+a
+2
+w" | fdisk $boot_drive
+		swap=yes
+		if [[ $nvme == true ]]; then
+			yes | mkswap "$boot_drive"p1
+			o8="$boot_drive"p1
+			case $fs in
+				ext4) yes | mkfs.ext4 "$boot_drive"p2 ;;
+				btrfs) mkfs.btrfs --force "$boot_drive"p2 ;;
+			esac
+			o7="$boot_drive"p2
+		else
+			yes | mkswap "$boot_drive"1
+			o8="$boot_drive"1
+			case $fs in
+				ext4) yes | mkfs.ext4 "$boot_drive"2 ;;
+				btrfs) mkfs.btrfs --force "$boot_drive"2 ;;
+			esac
+			o7="$boot_drive"2
+		fi
+	fi
+}
+if [[ ! -f /usr/bin/dialog ]]; then
+	echo Please install: dialog
+	exit
+fi
+mkdir -p /target
+o4=$(dialog --cr-wrap --no-cancel --title "Language" --menu "Please choose your language." 0 0 0 "de_DE.UTF-8" "Deutsch" "en_US.UTF-8" "English (US)" "fr_FR.UTF-8" "Français" "nl_NL.UTF-8" "Nederlands" "it_IT.UTF-8" "Italiano" "es_ES.UTF-8" "Español" 3>&1 1>&2 2>&3 3>&-)
+case $o4 in
+de_DE.UTF-8) local="de_DE.UTF-8" && locale="de_DE.UTF-8 UTF-8" && slan=de ;;
+en_US.UTF-8) local="en_US.UTF-8" && locale="en_US.UTF-8 UTF-8" && slan=en ;;
+fr_FR.UTF-8) local="fr_FR.UTF-8" && locale="fr_FR.UTF-8 UTF-8" && slan=fr ;;
+nl_NL.UTF-8) local="nl_NL.UTF-8" && locale="nl_NL.UTF-8 UTF-8" && slan=nl ;;
+it_IT.UTF-8) local="it_IT.UTF-8" && locale="it_IT.UTF-8 UTF-8" && slan=it ;;
+es_ES.UTF-8) local="es_ES.UTF-8" && locale="es_ES.UTF-8 UTF-8" && slan=es ;;
+esac
+if [[ ! -f /var/setup/lang.conf ]]; then
+	curl -o /var/setup/lang.conf https://raw.githubusercontent.com/Niklas20114552/arch-tui-installer/main/lang.conf
+fi
+source /var/setup/lang.conf $slan
+if [[ $1 == --debug ]]; then
+	dialog --cr-wrap --title "$mtit" --infobox "$err1" 0 0
+	sleep 3
+fi
+dialog --cr-wrap --title "$mtit" --extra-button --extra-label "$but1" --msgbox "$lan6" 0 0
+if [[ $? == 3 ]]; then
+	exit
+fi
+o1=$(dialog --cr-wrap --no-cancel --title "$tit3" --menu "$lan7" 0 0 0 de_DE "Deutsch" de_CH "Deutsch (Schweiz)" en_US "English" fr_FR "Français" nl_NL "Nederlands" it_IT "Italiano" es_ES "Español" 3>&1 1>&2 2>&3 3>&-)
+case $o1 in
+de_DE) keymap=de-latin1 && layout=de ;;
+de_CH) keymap=de_CH-latin1 && layout=ch ;;
+en_US) keymap=en && layout=en ;;
+ft_FR) keymap=fr && layout=fr ;;
+nl_NL) keymap=nl && layout=nl ;;
+it_IT) keymap=it && layout=it ;;
+es_ES) keymap=es && layout=es ;;
+esac
+loadkeys $keymap
+stype=$(dialog --no-items --cr-wrap --title "$mtit" --menu "$lan27" 13 0 0 Basic Full 2Steps 3>&1 1>&2 2>&3 3>&-)
+if [[ $stype == 2Steps ]]; then
+	2step $slan
+	exit
+fi
+o2=$(dialog --cr-wrap --no-cancel --title "$tit4" --menu "$lan8" 0 0 0 "Africa" "" "America" "" "Antarctica" "" "Arctic" "" "Asia" "" "Atlantic" "" "Australia" "" "Barzil" "" "Canada" "" "Chile" "" "Etc" "" "Europe" "" "Indian" "" "Mexico" "" "Pacific" "" "US" "" 3>&1 1>&2 2>&3 3>&-)
+cd /usr/share/zoneinfo/$o2
+tzone=$(echo *)
+o3=$(dialog --cr-wrap --no-cancel --no-items --title "$tit4" --menu "$lan8" 0 0 0 $tzone 3>&1 1>&2 2>&3 3>&-)
+timezone=/usr/share/zoneinfo/$o2/$o3
+o5=$(dialog --cr-wrap --no-cancel --title "$tit5" --inputbox "$lan9" 0 0 3>&1 1>&2 2>&3 3>&-)
+d1=$(find /dev/sd* -not -name '*[0-9]' | tr "\n" " ")
+d2=$(find /dev/vd* -not -name '*[0-9]' | tr "\n" " ")
+d3=$(find /dev/hd* -not -name '*[0-9]' | tr "\n" " ")
+d4=$(find /dev/nvme0n* -not -name '*p[0-9]' | tr "\n" " ")
+drives="$d1 $d2 $d3 $d4"
+drives=$(echo $drives)
+o6=$(dialog --cr-wrap --no-collapse --no-cancel --no-items --title "$tit6" --menu "$lan10 \n\n$(lsblk --output NAME,MODEL,PARTTYPENAME,SIZE /dev/{vd*[!0-9],sd*[!0-9],hd*[!0-9],nvme0n[0-9]})" 0 0 0 $drives 3>&1 1>&2 2>&3 3>&-)
+if [[ $o6 == /dev/nvme* ]]; then
+	nvme=true
+else
+	nvme=false
+fi
+boot_drive=$o6
+umount $boot_drive*
+umount /target
+swapoff $boot_drive*
+o10=$(dialog --title "$tit7b" --menu "$lan30" 0 0 0 "$but5b" "$but5" "$but6b" "$but6" 3>&1 1>&2 2>&3 3>&-)
+if [[ $o10 == "$but5b" ]]; then
+	part_automatic
+elif [[ $o10 == "$but6b" ]]; then
+	part_manual
+fi
+rootpw
+user_name=$(dialog --cr-wrap --no-cancel --title "$tit10" --inputbox "$lan19" 0 0 3>&1 1>&2 2>&3 3>&-)
+full_name=$(dialog --cr-wrap --no-cancel --title "$tit10" --inputbox "$lan26" 0 0 3>&1 1>&2 2>&3 3>&-)
+userpw
+#dialog --cr-wrap --title "$tit11" --no-label AMD --yes-label Nvidia --yesno "$lan20" 0 0
+
+if grep -q "GenuineIntel" /proc/cpuinfo; then
+	cpu=intel-ucode
+elif grep -q "AuthenticAMD" /proc/cpuinfo; then
+	cpu=amd-ucode
+elif grep -q "CentaurHauls\|TransmetaCPU" /proc/cpuinfo; then
+	:
+else
+	cpu=$(dialog --no-items --cr-wrap --title "$tit12" --menu "$lan21" 0 0 0 Intel AMD Transmeta VIA 3>&1 1>&2 2>&3 3>&-)
+	if [[ $cpu == AMD ]]; then
+		cpu=amd-ucode
+	elif [[ $cpu == Intel ]]; then
+		cpu=intel-ucode
+	fi
+fi
+pci=$(lspci)
+dialog --cr-wrap --title "$tit14" --yes-label "Opensource" --no-label "Proprietary" --yesno "$lan32" 0 0 
+if [[ $? == 0 ]]; then
+	drsrc="open"
+elif [[ $? == 1 ]]; then
+	drsrc="pro"
+else
+	drsrc="open"
+fi
+if echo "$pci" | grep -i amd > /dev/null; then
+	case $drsrc in
+		pro) gpu="xf86-video-amdgpu mesa" ;;
+		open) gpu="xf86-video-ati mesa" ;;
+	esac
+	echo "AMD Device detected" 
+fi
+if echo "$pci" | grep -i nvidia > /dev/null; then
+	case $drsrc in
+		pro) gpu="nvidia nvidia-utils nvidia-settings" ;;
+		open) gpu="xf86-video-nouveau mesa" ;;
+	esac
+	echo "NVIDIA Graphics Card detected"
+fi
+if echo "$pci" | grep -i virtualbox > /dev/null || echo "$pci" | grep -i vmware > /dev/null; then
+	gpu="virtualbox-guest-utils open-vm-tools"
+	echo "VMware or Virtualbox Hypervisor detected"
+fi
+if echo "$pci" | grep -i intel > /dev/null; then
+	case $drsrc in
+		pro) gpu="xf86-video-intel mesa" ;;
+		open) gpu="mesa" ;;
+	esac
+	echo "Intel Device detected"
+fi
+o9=$(dialog --nocancel --cr-wrap --no-items --title "AUR-Helper" --no-label "Chaotic-AUR" --menu "$lan22" 0 0 4 "Paru" "Yay" "Chaotic-AUR" "$but2" 3>&1 1>&2 2>&3 3>&-)
+if [[ $o9 == "Paru" ]]; then
+	aur=paru-bin
+	aurh=paru
+elif [[ $o9 == "Yay" ]]; then
+	aur=yay-bin
+	aurh=yay
+elif [[ "$o9" == "$but2" ]]; then
+	aurh=none
+elif [[ $o9 == "Chaotic-AUR" ]]; then
+	aur=chaotic
+	aurh=chaotic
+fi
+if [[ $stype == Full ]]; then
+	so1=$(dialog --no-cancel --no-items --title "$tit13" --menu "$lan28" 0 0 0 KDE-Plasma GNOME Xfce4 Cinnamon Deepin Trinity MATE LXQt LXDE 3>&1 1>&2 2>&3 3>&-)
+	if [[ $so1 == "KDE-Plasma" ]]; then
+        	de=kde
+	elif [[ $so1 == "GNOME" ]]; then
+	        de=gnome
+	elif [[ $so1 == "Xfce4" ]]; then
+	        de=xfce
+	elif [[ $so1 == "Cinnamon" ]]; then
+	        de=cinnamon
+	elif [[ $so1 == "Deepin" ]]; then
+	        de=deepin
+	elif [[ $so1 == "Trinity" ]]; then
+	        de=tde
+	elif [[ $so1 == "MATE" ]]; then
+	        de=mate
+	elif [[ $so1 == "LXQt" ]]; then
+	        de=lxqt
+	elif [[ $so1 == "LXDE" ]]; then
+	        de=lxde
+	fi
+fi
+dialog --cr-wrap --title "$mtit" --msgbox "$lan23" 0 0
+mount "$o7" /target
+if [[ $fs == btrfs ]]; then
+	(cd /target && btrfs subvolume create @ && btrfs subvolume create @home && btrfs subvolume create @var && btrfs subvolume create @snapshots)
+	umount /target
+	mount -o noatime,compress=zstd,space_cache=v2,ssd,discard=async,subvol=@ $o7 /target
+	mkdir -p /target/{home,var,.snapshots}
+	mount -o noatime,compress=zstd,space_cache=v2,ssd,discard=async,subvol=@home $o7 /target/home
+	mount -o noatime,compress=zstd,space_cache=v2,ssd,discard=async,subvol=@var $o7 /target/var
+	mount -o noatime,compress=zstd,space_cache=v2,ssd,discard=async,subvol=@snapshots $o7 /target/.snapshots
+fi
+if [[ -d /sys/firmware/efi ]]; then
+	mkdir -p /target/boot/efi
+	mount "$e1" /target/boot/efi
+fi
+pacman --noconfirm --needed -Sy archlinux-keyring
+
+pacstrap /target base linux linux-firmware git nano $cpu iptables-nft neovim vim
+
+if [[ $swap == yes ]]; then
+	swapon "$o8"
+fi
+
+genfstab -U /target >> /target/etc/fstab
+
+ln -sf $timezone /target/etc/localtime
+mkdir -p /target/var/setup
+arch-chroot bash -c "hwclock --systohc"
+arch-chroot bash -c "timedatectl set-ntp true"
+echo "$locale" > /target/etc/locale.gen
+arch-chroot /target bash -c "locale-gen"
+echo "LANG=$local" > /target/etc/locale.conf
+echo "KEYMAP=$keymap" > /target/etc/vconsole.conf
+echo '#!/usr/bin/bash' > /target/var/setup/setup.conf
+echo "layout=$layout" >> /target/var/setup/setup.conf
+echo "aurh=$aurh" >> /target/var/setup/setup.conf
+echo $o5 > /target/etc/hostname
+echo "127.0.0.1 localhost" >> /target/etc/hosts
+echo "::1       localhost" >> /target/etc/hosts
+echo "127.0.1.1 $hostname.local $hostname" >> /target/etc/hosts
+
+if [[ -d /sys/firmware/efi ]]; then
+	grub="grub efibootmgr"
+else
+	grub="grub"
+fi
+arch-chroot /target bash -c "pacman --needed --noconfirm -Sy $gpu $grub networkmanager network-manager-applet dialog wpa_supplicant mtools dosfstools reflector base-devel linux-headers avahi xdg-user-dirs xdg-utils gvfs gvfs-smb nfs-utils inetutils dnsutils bluez bluez-utils cups hplip alsa-utils pulseaudio bash-completion openssh rsync reflector acpi acpi_call tlp edk2-ovmf bridge-utils dnsmasq vde2 openbsd-netcat iptables-nft ipset firewalld flatpak sof-firmware nss-mdns acpid os-prober ntfs-3g terminus-font numlockx wget man-db neofetch cargo nvme-cli $extp"
+echo "echo 'root:$root_pass' | chpasswd" > /target/chpasswd.sh
+sed -i "s/#GRUB_DISABLE_OS_PROBER=false/GRUB_DISABLE_OS_PROBER=false/" /target/etc/default/grub
+if [[ -d /sys/firmware/efi ]]; then
+	arch-chroot /target bash -c "grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB"
+else
+	arch-chroot /target bash -c "grub-install --target=i386-pc $boot_drive"
+fi
+arch-chroot /target bash -c "grub-mkconfig -o /boot/grub/grub.cfg"
+arch-chroot /target bash -c "systemctl enable NetworkManager bluetooth cups.service avahi-daemon tlp reflector.timer fstrim.timer firewalld acpid"
+if [[ ! -f /var/setup/bashrc ]]; then
+	curl -o /var/setup/bashrc https://raw.githubusercontent.com/Niklas20114552/arch-tui-installer/main/bashrc
+fi
+if [[ ! -f /var/setup/bashrc.root ]]; then
+	curl -o /var/setup/bashrc.root https://raw.githubusercontent.com/Niklas20114552/arch-tui-installer/main/bashrc.root
+fi
+cp /var/setup/bashrc /target/etc/skel/.bashrc
+cp /var/setup/bashrc.root /target/root/.bashrc
+echo "if [ -f ~/.bashrc ]; then
+	. ~/.bashrc
+fi" > /target/root/.profile
+arch-chroot /target bash -c "useradd -mG wheel $user_name"
+echo "echo '$user_name:$user_pass' | chpasswd" >> /target/chpasswd.sh
+arch-chroot /target bash /chpasswd.sh
+rm -rf /target/chpasswd.sh
+echo "%wheel ALL=(ALL:ALL) ALL" > /target/etc/sudoers.d/wheel
+arch-chroot /target bash -c "chfn --full-name '$full_name' $user_name"
+if [[ -f /var/setup/installed.conf ]]; then
+	cp /var/setup/installed.conf /target/var/setup/lang.conf
+else
+	curl -o /var/setup/installed.conf https://raw.githubusercontent.com/Niklas20114552/arch-tui-installer/main/installed/lang.conf
+fi
+if [[ -f /var/setup/installer ]]; then
+	cp /var/setup/installer /target/usr/bin/installer
+else
+	curl -o /target/usr/bin/installer https://raw.githubusercontent.com/Niklas20114552/arch-tui-installer/main/installed/installer
+fi
+chmod +x /target/usr/bin/installer
+if [[ ! -f /target/usr/bin/installer ]]; then
+	dialog --cr-wrap --title "$err3" --msgbox "$err6" 0 0
+fi
+if [[ -f /var/setup/sumkpkg ]]; then
+	cp /var/setup/sumkpkg /target/var/setup/sumkpkg
+else
+	curl -o /target/var/setup/sumkpkg https://raw.githubusercontent.com/Niklas20114552/arch-tui-installer/main/sumkpkg
+fi
+chmod +x /target/var/setup/sumkpkg
+if [[ ! -f /target/var/setup/sumkpkg ]]; then
+	dialog --cr-wrap --title "$err2" --msgbox "$err7" 0 0
+	exit
+fi
+if [[ ! -f /var/setup/autologin.tmp ]]; then
+	curl -o /var/setup/autologin.tmp https://raw.githubusercontent.com/Niklas20114552/arch-tui-installer/main/autologin.tmp
+fi
+if [[ -f /var/setup/desktopinstall ]]; then
+	cp /var/setup/desktopinstall /target/usr/bin/desktopinstall
+else
+	curl -o /target/usr/bin/desktopinstall https://raw.githubusercontent.com/Niklas20114552/arch-tui-installer/main/installed/destopinstall
+fi
+chmod +x /target/usr/bin/desktopinstall
+if [[ ! -f /target/usr/bin/desktopinstall ]]; then
+	dialog --cr-wrap --title "$err3" --msgbox "$err8" 0 0
+	stype=Basic
+fi
+if [ "$aur" == "paru-bin" ] || [ "$aur" == "yay-bin" ]; then
+	git clone https://aur.archlinux.org/$aur.git /target/tmp_aur
+	arch-chroot /target bash -c "(cd /tmp_aur && /var/setup/sumkpkg -si --noconfirm)"
+	rm -rf /target/tmp_aur
+fi
+if [[ "$aur" == "chaotic" ]]; then
+	arch-chroot /target bash -c "pacman-key --recv-key FBA220DFC880C036 --keyserver keyserver.ubuntu.com"
+	arch-chroot /target bash -c "pacman-key --lsign-key FBA220DFC880C036"
+	arch-chroot /target bash -c "pacman --needed --noconfirm -U 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'"
+	echo "[chaotic-aur]
+Include = /etc/pacman.d/chaotic-mirrorlist
+
+[multilib]
+Include = /etc/pacman.d/mirrorlist" >> /target/etc/pacman.conf
+	arch-chroot /target bash -c "pacman --noconfirm --needed -Syy"
+fi
+if [ -e /etc/iwd/main.conf ]; then
+  cp /etc/iwd/main.conf /target/etc/iwd/main.conf
+else
+  echo "/etc/iwd/main.conf does not exist. Skipped."
+fi
+cp -rf /var/lib/iwd /target/var/lib/iwd 
+if [[ $stype == Full ]]; then
+	mkdir -p /target/etc/systemd/system/getty@tty1.service.d
+	echo "desktopinstall $de" >> /target/root/.bashrc
+	cp /var/setup/autologin.tmp /target/etc/systemd/system/getty@tty1.service.d/autologin.conf
+fi
+if [[ $1 == --debug ]]; then
+	echo DEBUG -- PAUSE -- PRESS ENTER
+	read
+fi
+dialog --title "$mtit" --ok-label "$but4" --pause "$lan24" 8 50 10
+if [[ $? != 1 ]]; then
+	umount -a
+	reboot
+else
+	exit
+fi

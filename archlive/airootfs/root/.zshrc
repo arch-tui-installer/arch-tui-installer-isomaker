@@ -1,0 +1,1 @@
+ alias setup="updater"
