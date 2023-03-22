@@ -7,7 +7,7 @@ fi
 echo "[*] Update/Install archiso"
 sudo pacman --needed --noconfirm -Sy archiso
 echo "[*] Update Submodules"
-(cd archlive/airootfs/var/setup/git; git checkout main; git pull)
+(cd archlive/airootfs/var/setup/git; git pull)
 echo "[*] Remove Folders: out, work"
 sudo rm -rfv {work,out}
 echo "[*] Start creating Iso"
