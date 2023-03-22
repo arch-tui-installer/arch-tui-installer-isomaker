@@ -1,3 +1,4 @@
 [submodule "archlive/airootfs/var/setup/git"]
 	path = archlive/airootfs/var/setup/git
 	url = https://github.com/Niklas20114552/arch-tui-installer
+	branch = main
