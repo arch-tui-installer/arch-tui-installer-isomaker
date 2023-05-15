@@ -3,8 +3,8 @@
 
 iso_name="archlinux-tui-setup"
 iso_label="ARCH_$(date +%Y%m)"
-iso_publisher="Arch Linux <https://archlinux.org>"
-iso_application="Arch Linux Live/Rescue CD"
+iso_publisher="Niklas20114552 <https://arch-tui-installer.github.io>"
+iso_application="Arch Linux Live/Rescue/Installation CD"
 iso_version="$(date +%Y.%m.%d)"
 install_dir="arch"
 buildmodes=('iso')
